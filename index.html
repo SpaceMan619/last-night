@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>City Runner — Pixel Platformer Prototype</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">NIGHT ROUTE / PLAYABLE BUILD</p>
+          <h1>CITY RUNNER</h1>
+        </div>
+        <div class="topbar-meta">
+          <div class="district-readout">
+            <span>SECTOR</span>
+            <strong id="districtName">OLD QUARTER</strong>
+          </div>
+          <div class="status" aria-live="polite">
+            <span class="status-dot"></span>
+            <span id="statusText">LOADING ASSETS</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="game-frame" aria-label="Playable city platformer">
+        <canvas id="game" width="960" height="540"></canvas>
+        <div class="loading" id="loading">
+          <div class="loading-mark"></div>
+          <p>BUILDING THE CITY</p>
+        </div>
+        <button class="audio-button" id="audioButton" type="button" aria-pressed="false">
+          SOUND OFF
+        </button>
+        <button class="fullscreen-button" id="fullscreenButton" type="button">
+          FULLSCREEN
+        </button>
+
+        <div class="mission-card" id="missionCard">
+          <p class="mission-kicker">NIGHT DISPATCH</p>
+          <h2>Restore the city signal.</h2>
+          <p>Collect six relay shards, cross three districts, and reach the rooftop uplink.</p>
+          <button id="startButton" type="button">START RUN <span>→</span></button>
+        </div>
+
+        <div class="completion-card" id="completionCard" hidden>
+          <p class="mission-kicker">ROUTE COMPLETE</p>
+          <h2>Signal restored.</h2>
+          <div class="result-grid">
+            <span>TIME <strong id="resultTime">00:00</strong></span>
+            <span>SHARDS <strong id="resultShards">0/9</strong></span>
+            <span>FALLS <strong id="resultFalls">0</strong></span>
+          </div>
+          <button id="restartButton" type="button">RUN AGAIN <span>↻</span></button>
+        </div>
+
+        <div class="toast" id="toast" aria-live="polite"></div>
+
+        <div class="touch-controls" aria-label="Touch controls">
+          <div class="touch-left">
+            <button data-control="left" aria-label="Move left">←</button>
+            <button data-control="right" aria-label="Move right">→</button>
+          </div>
+          <div class="touch-right">
+            <button data-control="run" aria-label="Run">RUN</button>
+            <button data-control="jump" aria-label="Jump">↑</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="route-strip" aria-label="Route progress">
+        <div class="route-line"><span id="routeProgress"></span></div>
+        <div class="route-stop active" data-stop="0"><i></i><span>OLD QUARTER</span></div>
+        <div class="route-stop" data-stop="1"><i></i><span>TRANSIT WARD</span></div>
+        <div class="route-stop" data-stop="2"><i></i><span>SKYLINE WORKS</span></div>
+      </div>
+
+      <footer class="controls">
+        <div class="control-group">
+          <span class="key">A</span><span class="key">D</span>
+          <span>MOVE</span>
+        </div>
+        <div class="control-group">
+          <span class="key wide">SHIFT</span>
+          <span>RUN</span>
+        </div>
+        <div class="control-group">
+          <span class="key wide">SPACE</span>
+          <span>JUMP</span>
+        </div>
+        <div class="control-group">
+          <span class="key">P</span>
+          <span>PAUSE</span>
+        </div>
+        <p class="hint">Keyboard · touch · gamepad</p>
+      </footer>
+    </main>
+    <script src="game.js"></script>
+  </body>
+</html>
