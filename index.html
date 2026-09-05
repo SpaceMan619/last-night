@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>City Runner — Pixel Platformer Prototype</title>
+    <title>Last Night · A short city story</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <main class="shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">NIGHT ROUTE / PLAYABLE BUILD</p>
-          <h1>CITY RUNNER</h1>
+          <p class="eyebrow">A SHORT CITY STORY</p>
+          <h1>LAST NIGHT</h1>
         </div>
         <div class="topbar-meta">
           <div class="district-readout">
@@ -26,28 +26,33 @@
       </header>
 
       <section class="game-frame" aria-label="Playable city platformer">
-        <canvas id="game" width="960" height="540"></canvas>
+        <canvas id="game" width="960" height="540" tabindex="0" aria-label="Last Night game. Move with A and D, hold Space to jump higher, E to interact, P to pause."></canvas>
         <div class="loading" id="loading">
           <div class="loading-mark"></div>
           <p>BUILDING THE CITY</p>
         </div>
         <button class="audio-button" id="audioButton" type="button" aria-pressed="false">
-          SOUND OFF
+          MUSIC OFF
         </button>
         <button class="fullscreen-button" id="fullscreenButton" type="button">
           FULLSCREEN
         </button>
 
         <div class="mission-card" id="missionCard">
-          <p class="mission-kicker">NIGHT DISPATCH</p>
-          <h2>Restore the city signal.</h2>
-          <p>Collect six relay shards, cross three districts, and reach the rooftop uplink.</p>
-          <button id="startButton" type="button">START RUN <span>→</span></button>
+          <div class="title-display" aria-label="Last Night"><span>LAST</span><span>NIGHT</span></div>
+          <span class="title-rule" aria-hidden="true"></span>
+          <p class="mission-kicker">23:47 / THE LAST TRAM HAS STOPPED</p>
+          <h2>One battery.<br>A city waiting.</h2>
+          <p>A repair shop still has a light on. Before the night is over, you'll decide what that light is for.</p>
+          <p class="playtime">A short story in three acts · Aim: 5–6 minutes<br>Move A/D · Jump Space · Talk E</p>
+          <button id="startButton" type="button" disabled>BEGIN THE NIGHT <span>→</span></button>
+          <button id="continueButton" type="button" hidden>CONTINUE SAVED STORY →</button>
         </div>
 
         <div class="completion-card" id="completionCard" hidden>
           <p class="mission-kicker">ROUTE COMPLETE</p>
-          <h2>Signal restored.</h2>
+          <h2 id="endingTitle">A way home.</h2>
+          <p id="endingText"></p>
           <div class="result-grid">
             <span>TIME <strong id="resultTime">00:00</strong></span>
             <span>SHARDS <strong id="resultShards">0/9</strong></span>
@@ -57,6 +62,18 @@
         </div>
 
         <div class="toast" id="toast" aria-live="polite"></div>
+        <div id="objective" class="objective" hidden>
+          <div><span id="objectiveChapter"></span><span id="storyProgress"></span></div>
+          <strong id="objectiveTitle"></strong><p id="objectiveHint"></p>
+          <span id="objectiveDistance"></span>
+        </div>
+        <section id="dialogue" class="dialogue" role="dialog" aria-label="Story conversation" hidden>
+          <canvas id="portrait" width="80" height="96" aria-hidden="true"></canvas>
+          <div class="dialogue-body"><div class="dialogue-heading"><strong id="speaker"></strong><span id="dialogueCount"></span></div>
+          <p id="dialogueText" aria-live="polite"></p><div id="dialogueActions"></div></div>
+        </section>
+        <button id="interactButton" class="interact-button" type="button" hidden>Talk / use [E]</button>
+        <button id="pauseButton" class="pause-button" type="button" hidden>Pause [P]</button>
 
         <div class="touch-controls" aria-label="Touch controls">
           <div class="touch-left">
@@ -68,6 +85,7 @@
             <button data-control="jump" aria-label="Jump">↑</button>
           </div>
         </div>
+        <p class="orientation-note">LANDSCAPE RECOMMENDED</p>
       </section>
 
       <div class="route-strip" aria-label="Route progress">
@@ -78,6 +96,10 @@
       </div>
 
       <footer class="controls">
+        <div class="control-group">
+          <span class="key">E</span>
+          <span>TALK / USE</span>
+        </div>
         <div class="control-group">
           <span class="key">A</span><span class="key">D</span>
           <span>MOVE</span>
@@ -97,6 +119,8 @@
         <p class="hint">Keyboard · touch · gamepad</p>
       </footer>
     </main>
+    <script src="audio.js"></script>
+    <script src="story.js"></script>
     <script src="game.js"></script>
   </body>
 </html>

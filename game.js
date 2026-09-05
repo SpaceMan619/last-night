@@ -19,7 +19,6 @@
   const WORLD = SEGMENT * 3;
   const GROUND = 428;
   const SCALE = 1.3;
-  const REQUIRED = 6;
 
   const districts = [
     { name: "OLD QUARTER", key: "old", x: 0, y: -180 },
@@ -38,7 +37,7 @@
     [1686, 302, 155, 14], [1945, 350, 150, 14, "moveY", 78, 1.4],
     [2220, 312, 190, 14], [2470, 360, 94, 14], [2705, 345, 185, 14],
     [2980, 292, 154, 14], [3240, 350, 174, 14, "moveX", 72, 1.15],
-    [3495, 298, 150, 14],
+    [3495, 298, 150, 14], [1320, 395, 75, 12], [2580, 388, 75, 12],
   ].map(([x, y, width, height, type, range = 0, speed = 0]) => ({
     x, y, width, height, type, range, speed, baseX: x, baseY: y, previousX: x,
   }));
@@ -82,6 +81,33 @@
   let sound = false;
   let audioContext = null;
   let ambient = null;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let ready = false;
+  let padInteract = false;
+  let walkTarget = null;
+  const story = new window.LastNight({
+    player, active: () => started && !paused && !complete,
+    start: (resume) => { resetWorld(); startRun(resume); },
+    clearInput: () => { keys.clear(); touch.clear(); walkTarget = null; player.vx = 0; player.buffer = 0; },
+    chime: () => chord(440), heal: () => { player.health = 3; },
+    snapshot: () => ({ x: player.x, y: player.y, elapsed, checkpoint, shards: shards.map(s => s.taken), falls }),
+    restore: (s) => {
+      player.x = clamp(Number(s.x) || 105, 20, WORLD - 20); player.y = Number(s.y) || GROUND;
+      player.oldY = player.y; elapsed = Math.max(0, Number(s.elapsed) || 0);
+      checkpoint = clamp(Number(s.checkpoint) || 0, 0, 2); falls = Math.max(0, Number(s.falls) || 0);
+      shards.forEach((v, i) => { v.taken = !!s.shards?.[i]; });
+      camera = clamp(player.x - W * .42, 0, WORLD - W);
+    },
+    finish: (choice) => {
+      complete = true; player.vx = 0; ui.statusText.textContent = 'DAWN / STORY COMPLETE';
+      byId('endingTitle').textContent = choice === 'tram' ? 'The last tram came home.' : 'The city found its voice.';
+      byId('endingText').textContent = choice === 'tram' ? 'Eleven people stepped onto the platform. The transmitter waited for morning. Somewhere below, Inez put the kettle on.' : 'The rescue crew reached the tram by the stairs. Across the district, people heard each other again. Inez left her door open.';
+      ui.resultTime.textContent = formatTime(elapsed); ui.resultShards.textContent = `${countShards()}/9`;
+      ui.resultFalls.textContent = String(falls); ui.completion.hidden = false;
+      byId('objective').hidden = true; byId('interactButton').hidden = true; successSound();
+      byId('restartButton').focus();
+    },
+  });
 
   const framePaths = (folder) => Array.from({ length: 8 }, (_, i) =>
     `${folder}/frame_${String(i).padStart(3, "0")}.png`);
@@ -132,6 +158,9 @@
   const formatTime = (seconds) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
   function resetWorld() {
+    walkTarget = null;
+    particles.length = 0; keys.clear(); touch.clear(); player.buffer = 0; player.clock = 0; player.frame = 0; player.state = 'idle';
+    platforms.forEach(p => { p.x = p.baseX; p.y = p.baseY; p.previousX = p.x; p.previousY = p.y; });
     shards = shardSeeds.map(([x, y], i) => ({ x, y, phase: i * .7, taken: false }));
     drones = droneSeeds.map(([baseX, y, range, speed], i) => ({ baseX, x: baseX, y, range, speed, phase: i * 1.7, alive: true }));
     checkpoint = 0; district = 0; elapsed = 0; falls = 0; camera = 0; shake = 0;
@@ -139,10 +168,16 @@
     respawn(false); updateRoute();
   }
 
-  function startRun() {
+  function startRun(resume = false) {
+    if (!ready) return;
+    story.reset(resume === true);
+    document.body.classList.add('playing');
+    if (!audioContext) toggleSound();
+    else { audioContext.resume(); ambient?.setPaused(false); }
+    byId('objective').hidden = false; byId('interactButton').hidden = false; byId('pauseButton').hidden = false;
     started = true; paused = false; ui.mission.classList.add("dismissed");
     ui.statusText.textContent = "ROUTE ACTIVE"; last = performance.now();
-    tone(440, .08, "square", .028); notify("COLLECT 6 RELAY SHARDS");
+    tone(440, .08, "square", .028); notify('FIND INEZ · E TO TALK'); canvas.focus();
   }
 
   function respawn(effect = true) {
@@ -153,12 +188,13 @@
   }
 
   function input() {
-    const pad = navigator.getGamepads?.().find(Boolean);
+    const pad = Array.from(navigator.getGamepads?.() || []).find(Boolean);
     return {
       left: keys.has("ArrowLeft") || keys.has("KeyA") || touch.has("left") || !!pad && (pad.axes[0] < -.28 || pad.buttons[14]?.pressed),
       right: keys.has("ArrowRight") || keys.has("KeyD") || touch.has("right") || !!pad && (pad.axes[0] > .28 || pad.buttons[15]?.pressed),
       run: keys.has("ShiftLeft") || keys.has("ShiftRight") || touch.has("run") || !!pad && (pad.buttons[2]?.pressed || pad.buttons[5]?.pressed),
       jump: !!pad && !!pad.buttons[0]?.pressed,
+      interact: !!pad && !!pad.buttons[3]?.pressed,
     };
   }
 
@@ -168,6 +204,7 @@
   function movePlatforms() {
     for (const p of platforms) {
       p.previousX = p.x;
+      p.previousY = p.y;
       if (p.type === "moveY") p.y = p.baseY + Math.sin(elapsed * p.speed) * p.range;
       if (p.type === "moveX") p.x = p.baseX + Math.sin(elapsed * p.speed) * p.range;
     }
@@ -175,17 +212,25 @@
 
   function update(dt) {
     if (!started || paused || complete) return;
-    elapsed += dt; toastTime = Math.max(0, toastTime - dt);
+    elapsed += dt;
+    const controls = input();
+    if (controls.interact && !padInteract) story.interact();
+    padInteract = controls.interact;
+    if (story.locked) return;
+    toastTime = Math.max(0, toastTime - dt);
     if (!toastTime) ui.toast.classList.remove("visible");
     player.invulnerable = Math.max(0, player.invulnerable - dt); shake = Math.max(0, shake - dt * 28);
-    const controls = input();
     if (controls.jump && !padJump) queueJump();
     if (!controls.jump && padJump) releaseJump();
     padJump = controls.jump;
 
     movePlatforms();
-    if (player.grounded && player.platform?.type === "moveX") player.x += player.platform.x - player.platform.previousX;
-    const direction = Number(controls.right) - Number(controls.left);
+    if (player.grounded && player.platform?.type?.startsWith('move')) {
+      player.x += player.platform.x - player.platform.previousX;
+      player.y += player.platform.y - player.platform.previousY;
+    }
+    if (walkTarget !== null && Math.abs(walkTarget - player.x) < 8) walkTarget = null;
+    const direction = controls.right || controls.left ? Number(controls.right) - Number(controls.left) : walkTarget === null ? 0 : Math.sign(walkTarget - player.x);
     player.vx = approach(player.vx, direction * (controls.run ? 300 : 180), (player.grounded ? 1850 : 980) * dt);
     if (direction) player.facing = direction > 0 ? "east" : "west";
     player.buffer = Math.max(0, player.buffer - dt);
@@ -209,7 +254,7 @@
       }
     }
     if (player.y > H + 120) { falls++; hit(true); }
-    animate(dt); updateParticles(dt); updateDrones(); collect(); checkHazards(); checkCheckpoints(); checkExit();
+    animate(dt); updateParticles(dt); updateDrones(); collect(); checkHazards(); checkCheckpoints(); story.tick(dt);
     camera += (clamp(player.x - W * .42, 0, WORLD - W) - camera) * Math.min(1, dt * 4.5);
     const next = Math.min(2, Math.floor((player.x + 80) / SEGMENT));
     if (next !== district) { district = next; updateRoute(); notify(districts[district].name); tone(330 + district * 90, .12, "triangle", .025); }
@@ -248,7 +293,7 @@
 
   function checkHazards() {
     if (!player.grounded || player.invulnerable || player.y < GROUND - 3) return;
-    const hazard = hazards.find((item) => player.x > item.x && player.x < item.x + item.width);
+    const hazard = hazards.find((item) => !(story.safeTransit && item.x > SEGMENT && item.x < SEGMENT * 2) && player.x > item.x && player.x < item.x + item.width);
     if (hazard) hit(false, hazard.x + hazard.width / 2);
   }
 
@@ -257,17 +302,6 @@
     if (next < 0) return;
     checkpoint = next; player.health = 3; notify(`CHECKPOINT — ${checkpoints[next].label}`);
     burst(checkpoints[next].x, GROUND - 30, 18, "signal"); chord(420 + next * 80);
-  }
-
-  function checkExit() {
-    if (player.x < WORLD - 102) return;
-    if (countShards() < REQUIRED) {
-      player.x = WORLD - 108; player.vx = -170;
-      const left = REQUIRED - countShards(); notify(`${left} MORE SHARD${left === 1 ? "" : "S"} REQUIRED`); return;
-    }
-    complete = true; player.vx = 0; ui.statusText.textContent = "SIGNAL RESTORED";
-    ui.resultTime.textContent = formatTime(elapsed); ui.resultShards.textContent = `${countShards()}/${shards.length}`;
-    ui.resultFalls.textContent = String(falls); ui.completion.hidden = false; successSound();
   }
 
   function hit(fromFall, source = player.x) {
@@ -299,13 +333,13 @@
   function draw() {
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = "#061022"; ctx.fillRect(0, 0, W, H);
-    const sx = shake ? (Math.random() - .5) * shake : 0;
-    const sy = shake ? (Math.random() - .5) * shake : 0;
+    const sx = shake && !reducedMotion ? (Math.random() - .5) * shake : 0;
+    const sy = shake && !reducedMotion ? (Math.random() - .5) * shake : 0;
     ctx.save(); ctx.translate(Math.round(sx), Math.round(sy));
     drawBackgrounds(); drawAtmosphere();
     ctx.save(); ctx.translate(-Math.round(camera), 0);
     drawSeams(); drawPlatforms(); drawCheckpoints(); drawHazards(); drawShards();
-    drawDrones(); drawParticles(); drawExit(); drawPlayer();
+    drawDrones(); drawParticles(); drawExit(); story.draw(ctx, reducedMotion ? 0 : elapsed); drawPlayer();
     ctx.restore(); ctx.restore(); drawHud();
     if (paused) drawPause();
   }
@@ -322,6 +356,7 @@
   }
 
   function drawAtmosphere() {
+    if (reducedMotion) return;
     const now = performance.now();
     if (district === 1) {
       ctx.strokeStyle = "rgba(104,184,255,.24)"; ctx.lineWidth = 1;
@@ -372,9 +407,10 @@
 
   function drawHazards() {
     hazards.forEach((hazard, i) => {
+      if (story.safeTransit && hazard.x > SEGMENT && hazard.x < SEGMENT * 2) return;
       const bright = Math.sin(performance.now() * .018 + i * 2) > .15;
       ctx.fillStyle = "rgba(2,12,21,.75)"; ctx.fillRect(hazard.x, GROUND - 3, hazard.width, 5);
-      ctx.fillStyle = bright ? "#3ff4ff" : "#237f91";
+      ctx.fillStyle = bright ? "#ff796f" : "#9f4851";
       for (let x = hazard.x + 5; x < hazard.x + hazard.width - 4; x += 14) ctx.fillRect(x, GROUND - 5 - ((x + i) % 3) * 2, 7, 2);
     });
   }
@@ -411,7 +447,7 @@
   }
 
   function drawExit() {
-    const x = WORLD - 68, ready = countShards() >= REQUIRED;
+    const x = WORLD - 68, ready = story.step === 12;
     const pulse = .5 + Math.sin(performance.now() * .008) * .22;
     ctx.fillStyle = "#13243a"; ctx.fillRect(x - 3, GROUND - 142, 6, 142);
     ctx.fillStyle = ready ? "#3ff4ff" : "#ff4666"; ctx.fillRect(x - 10, GROUND - 150, 20, 15);
@@ -437,21 +473,11 @@
   }
 
   function drawHud() {
-    ctx.fillStyle = "rgba(3,8,18,.78)"; ctx.fillRect(18, 18, 138, 53);
-    ctx.fillStyle = "#3ff4ff"; ctx.fillRect(18, 18, 3, 53); ctx.font = "9px monospace";
-    ctx.fillStyle = "#7f92af"; ctx.fillText("MOTION", 30, 34); ctx.fillText("ENERGY", 30, 64);
-    ctx.fillStyle = "#edf6ff"; ctx.fillText(player.state.toUpperCase(), 30, 49);
-    for (let i = 0; i < 3; i++) { ctx.fillStyle = i < player.health ? "#ffb449" : "#2b3850"; ctx.fillRect(76 + i * 14, 57, 9, 7); }
-
-    ctx.fillStyle = "rgba(3,8,18,.76)"; ctx.fillRect(W / 2 - 101, 18, 202, 38);
-    ctx.fillStyle = "#7f92af"; ctx.fillText("CITY SIGNAL", W / 2 - 88, 33);
-    ctx.fillStyle = "#17324b"; ctx.fillRect(W / 2 - 88, 43, 176, 3);
-    ctx.fillStyle = "#3ff4ff"; ctx.fillRect(W / 2 - 88, 43, Math.round(176 * countShards() / shards.length), 3);
-    ctx.fillStyle = "#edf6ff"; ctx.fillText(`${countShards()}/${shards.length}`, W / 2 + 68, 33);
-
-    ctx.fillStyle = "rgba(3,8,18,.76)"; ctx.fillRect(W - 146, 18, 128, 38);
-    ctx.fillStyle = "#7f92af"; ctx.fillText("RUN TIME", W - 134, 33);
-    ctx.fillStyle = "#edf6ff"; ctx.fillText(formatTime(elapsed), W - 134, 49);
+    if (!started || story.locked || complete) return;
+    ctx.fillStyle = "rgba(8,12,20,.64)"; ctx.fillRect(18, 492, 260, 29);
+    ctx.font = "10px monospace";
+    for (let i = 0; i < 3; i++) { ctx.fillStyle = i < player.health ? "#e9ba78" : "#45505a"; ctx.fillRect(29 + i * 12, 503, 7, 7); }
+    ctx.fillStyle = "#d5cec1"; ctx.fillText(`SIGNAL ${countShards()}/${shards.length}   ${formatTime(elapsed)}`, 77, 511);
   }
 
   function drawPause() {
@@ -462,9 +488,12 @@
   }
 
   function updateRoute() {
+    if (ambient) ambient.chapter = story.current.chapter;
     ui.districtName.textContent = districts[district].name;
     ui.routeStops.forEach((stop, i) => stop.classList.toggle("active", i <= district));
     ui.routeProgress.style.width = `${clamp(player.x / (WORLD - 68) * 100, 0, 100)}%`;
+    const target = story.current;
+    byId('objectiveDistance').textContent = `${target.x < player.x - 65 ? '←' : target.x > player.x + 65 ? '→' : '◆'} ${Math.round(Math.abs(player.x - target.x) / 20)} m${Math.abs(player.y - target.y) > 24 ? (target.y < player.y ? ' · above you' : ' · below you') : ''}`;
   }
 
   function notify(message) {
@@ -484,43 +513,55 @@
 
   function toggleSound() {
     if (!audioContext) audioContext = new AudioContext();
+    audioContext.resume();
     sound = !sound;
-    if (!ambient) {
-      const oscillator = audioContext.createOscillator(); ambient = audioContext.createGain();
-      oscillator.type = "sine"; oscillator.frequency.value = 42; oscillator.connect(ambient).connect(audioContext.destination); oscillator.start();
-    }
-    ambient.gain.value = sound ? .012 : 0;
-    ui.audio.textContent = sound ? "SOUND ON" : "SOUND OFF"; ui.audio.setAttribute("aria-pressed", String(sound)); tone(440, .05, "square", .02);
+    if (!ambient) ambient = new window.NightScore(audioContext);
+    ambient.setEnabled(sound);
+    ui.audio.textContent = sound ? 'MUSIC ON' : 'MUSIC OFF'; ui.audio.setAttribute('aria-pressed', String(sound));
   }
 
   function togglePause() {
     if (!started || complete) return;
     paused = !paused; ui.statusText.textContent = paused ? "ROUTE PAUSED" : "ROUTE ACTIVE";
+    byId('pauseButton').textContent = paused ? 'Resume [P]' : 'Pause [P]';
+    ambient?.setPaused(paused);
     if (!paused) last = performance.now();
   }
 
-  byId("startButton").addEventListener("click", startRun);
+  byId("startButton").addEventListener("click", () => startRun(false));
   byId("restartButton").addEventListener("click", () => { ui.completion.hidden = true; resetWorld(); startRun(); });
   ui.audio.addEventListener("click", toggleSound);
+  byId('pauseButton').onclick = togglePause;
   ui.fullscreen.addEventListener("click", async () => {
     const frame = document.querySelector(".game-frame");
     if (!document.fullscreenElement) await frame.requestFullscreen?.(); else await document.exitFullscreen?.();
   });
 
   window.addEventListener("keydown", (event) => {
+    if (event.code === 'KeyE' && !event.repeat) { event.preventDefault(); story.interact(); return; }
+    if (event.code === 'Escape' && !event.repeat) { togglePause(); return; }
+    if (event.code === 'KeyP' && !event.repeat) { togglePause(); return; }
+    if (story.locked) return;
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "Space"].includes(event.code)) event.preventDefault();
-    if (event.code === "KeyP" && !event.repeat) togglePause();
+    if (['ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(event.code)) walkTarget = null;
     keys.add(event.code);
     if (["Space", "ArrowUp", "KeyW"].includes(event.code) && !event.repeat) queueJump();
   });
   window.addEventListener("keyup", (event) => {
     keys.delete(event.code); if (["Space", "ArrowUp", "KeyW"].includes(event.code)) releaseJump();
   });
-  window.addEventListener("blur", () => keys.clear());
+  window.addEventListener('blur', () => { keys.clear(); touch.clear(); if (started && !paused && !complete) togglePause(); });
+
+  canvas.addEventListener('pointerdown', (event) => {
+    if (!started || paused || complete || story.locked) return;
+    const rect = canvas.getBoundingClientRect();
+    walkTarget = clamp((event.clientX - rect.left) / rect.width * W + camera, 20, WORLD - 20);
+    canvas.focus();
+  });
 
   document.querySelectorAll("[data-control]").forEach((button) => {
     const name = button.dataset.control;
-    const press = (event) => { event.preventDefault(); touch.add(name); button.classList.add("active"); if (name === "jump") queueJump(); };
+    const press = (event) => { event.preventDefault(); if (story.locked) return; button.setPointerCapture(event.pointerId); touch.add(name); button.classList.add("active"); if (name === "jump") queueJump(); };
     const release = (event) => { event.preventDefault(); touch.delete(name); button.classList.remove("active"); if (name === "jump") releaseJump(); };
     button.addEventListener("pointerdown", press); button.addEventListener("pointerup", release);
     button.addEventListener("pointercancel", release); button.addEventListener("pointerleave", release);
@@ -532,6 +573,7 @@
   }
 
   loadAssets().then(() => {
+    ready = true; byId('startButton').disabled = false;
     resetWorld(); ui.loading.classList.add("hidden"); ui.status.classList.add("ready");
     ui.statusText.textContent = "CITY ONLINE"; requestAnimationFrame(loop);
   }).catch((error) => {
